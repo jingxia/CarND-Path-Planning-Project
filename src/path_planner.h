@@ -6,16 +6,6 @@ using namespace std;
 
 class PathPlanner
 {
-
-    private:
-
-
-    public:
-        
-
-
-
-
 };
 
 #endif 
