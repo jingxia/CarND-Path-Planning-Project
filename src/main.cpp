@@ -20,8 +20,8 @@ const double MAX_SPEED = 50;
 const int PATH_SIZE = 50;
 const double LANE_WIDTH = 4.0; 
 const double TIME_INTERVAL = 0.02;
-const double SAFE_DISTANCE_AHEAD = 30;
-const double SAFE_DISTANCE_BEHIND = 15;
+const double SAFE_DISTANCE_AHEAD_SECOND = 1.2;
+const double SAFE_DISTANCE_BEHIND_SECOND = 2;
 
 // For converting back and forth between radians and degrees.
 constexpr double pi() { return M_PI; }
@@ -184,6 +184,7 @@ void chooseLane(double & d, double s, double & ref_vel, int prev_path_size, cons
     bool left_clear = (lane > 0);
     bool right_clear = (lane < 2);
     bool car_ahead = false;
+    double ahead_car_dist = 100;
 
     for (size_t i = 0; i != sensor_fusion.size(); ++i)
     {
@@ -198,12 +199,13 @@ void chooseLane(double & d, double s, double & ref_vel, int prev_path_size, cons
         double car_d = sensor_fusion[i][6];
         int car_lane = detectLane(car_d);
 
-        if (car_s >= s && (car_s - s) <= SAFE_DISTANCE_AHEAD)
+        if (car_s >= s && (car_s - s) <= SAFE_DISTANCE_AHEAD_SECOND * ref_vel)
         {
             if (car_lane == lane)
             {
                 cout << "Car Ahead !!!!" << endl;
                 car_ahead = true;
+                ahead_car_dist = min(ahead_car_dist, car_s - s);
             }
             else if (car_lane - lane == 1)
             {
@@ -214,7 +216,7 @@ void chooseLane(double & d, double s, double & ref_vel, int prev_path_size, cons
                 left_clear = false;
             }
         }
-        else if (car_s < s && (s - car_s) <= SAFE_DISTANCE_BEHIND)
+        else if (car_s < s && (s - car_s) <= SAFE_DISTANCE_BEHIND_SECOND * max(5.0, speed - ref_vel))
         {
             if (car_lane - lane == 1)
             {
@@ -229,7 +231,7 @@ void chooseLane(double & d, double s, double & ref_vel, int prev_path_size, cons
 
     if (car_ahead)
     {
-        ref_vel -= 0.2;
+        ref_vel -= 0.27 * (1.0 - ahead_car_dist / (SAFE_DISTANCE_AHEAD_SECOND * ref_vel));
 
         if (left_clear)
         {
@@ -243,8 +245,8 @@ void chooseLane(double & d, double s, double & ref_vel, int prev_path_size, cons
         }
 
     }
-    else if (ref_vel < MAX_SPEED - 0.5) {
-        ref_vel += 0.2;
+    else if (ref_vel < MAX_SPEED - 0.3) {
+        ref_vel += 0.25;
     }
 
     d = 2 + 4 * lane;
