@@ -19,6 +19,30 @@ Every the controller gets information from the simulator, it will read in this c
    
 ### chooseLane step
 
+In the chooseLane step, it'll take this car's current status, status of all other cars (location, velocity, etc), and the remaining of previous path as input. It'll check if it's needed and possible to change a lane, and at the same time dynamicly decide whether to accelarate or slow down, and at which accelaration rate. More specifically, it'll do the following: 
+
+1. There are 2 parameters to determine safe distance ahead and behind. To generate a more smooth riding experience and avoid unnecessary speeding up / slowing down, the safe distance is dynamically determined based on velocity and relative velocity between other cars. These 2 parameters are tuned based on simulation which strikes a balance between speed, smooth and safety. 
+
+   a. safe distance ahead: (parameter, 1.2s)
+   
+      Check if there's any other car that's ahead in all 3 lanes with distance of *1.2s* * velocity; 
+      
+      -- For the same lane, if there is a car ahead, we'll slow down (decrease the velocity) by 0.27 * (1.0 - ahead_car_distance / (1.2s * current_velocity)). In other words, the closer we are with the card in front, the more quickly we slow down, so the slowing down is a smooth and continuous process. 
+      
+      -- For the lane left to and right to the current lane, if there's no car, we'll say that lane is clear. 
+      
+      
+   b. safe distance behind: (parameter, 2s)
+   
+      This determines if we can change lane. Check if there's any other car that's behind in the lane that we want to switch to, with distance of *2s* * (other car's velocity - this car's velocity), or within 10m (minimum distance to ensure a safe lane changing). If there is none, we determine that this lane is clear and possible to switch to. 
+      
+2. If there's no car ahead within the dynamic safe distance, we'll drive straight in same lane. Moreover, if we are below maximum speed, we'll speed up by 0.25. 
+
+3. If there's a car ahead within the safe distance, and either left or right is clear, we'll switch to left or right (left first). 
+
+We'll then feed the chosen lane, along with the updated velocity, to the next step. 
+      
+      
    
 ### Simulator.
 You can download the Term3 Simulator which contains the Path Planning Project from the [releases tab (https://github.com/udacity/self-driving-car-sim/releases/tag/T3_v1.2).
