@@ -9,6 +9,7 @@ const double SAFE_DISTANCE_AHEAD = 30;
 const double SAFE_DISTANCE_BEHIND = 15;
 const double MAX_SPEED = 22.35;
 
+
 template <typename T>
 int PathPlanner::ChooseLane(double d, double s, double & ref_vel, int prev_path_size, const T& sensor_fusion)
 {
@@ -60,7 +61,7 @@ int PathPlanner::ChooseLane(double d, double s, double & ref_vel, int prev_path_
 
     if (car_ahead)
     {
-        ref_vel -= 0.02;
+        ref_vel -= 0.2;
 
         if (left_clear)
         {

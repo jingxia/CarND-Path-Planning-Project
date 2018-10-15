@@ -16,8 +16,12 @@ using namespace std;
 // for convenience
 using json = nlohmann::json;
 
-const double MAX_SPEED = 22.35;
-const int path_size = 50;
+const double MAX_SPEED = 50;
+const int PATH_SIZE = 50;
+const double LANE_WIDTH = 4.0; 
+const double TIME_INTERVAL = 0.02;
+const double SAFE_DISTANCE_AHEAD = 30;
+const double SAFE_DISTANCE_BEHIND = 15;
 
 // For converting back and forth between radians and degrees.
 constexpr double pi() { return M_PI; }
@@ -168,6 +172,86 @@ vector<double> getXY(double s, double d, const vector<double> &maps_s, const vec
 
 }
 
+int detectLane(double d)
+{
+    return floor(d / LANE_WIDTH);
+}
+
+template <typename T>
+void chooseLane(double & d, double s, double & ref_vel, int prev_path_size, const T& sensor_fusion)
+{
+    int lane = detectLane(d);
+    bool left_clear = (lane > 0);
+    bool right_clear = (lane < 2);
+    bool car_ahead = false;
+
+    for (size_t i = 0; i != sensor_fusion.size(); ++i)
+    {
+        // predict the future position for each of the other vehicles
+        double vx = sensor_fusion[i][3];
+        double vy = sensor_fusion[i][4];
+        double speed = sqrt(vx*vx + vy*vy);
+
+        double car_s = sensor_fusion[i][5];
+        car_s += prev_path_size * TIME_INTERVAL * speed;
+
+        double car_d = sensor_fusion[i][6];
+        int car_lane = detectLane(car_d);
+
+        if (car_s >= s && (car_s - s) <= SAFE_DISTANCE_AHEAD)
+        {
+            if (car_lane == lane)
+            {
+                cout << "Car Ahead !!!!" << endl;
+                car_ahead = true;
+            }
+            else if (car_lane - lane == 1)
+            {
+                right_clear = false;
+            }
+            else if (car_lane - lane == -1)
+            {
+                left_clear = false;
+            }
+        }
+        else if (car_s < s && (s - car_s) <= SAFE_DISTANCE_BEHIND)
+        {
+            if (car_lane - lane == 1)
+            {
+                right_clear = false;
+            }
+            else if (car_lane - lane == -1)
+            {
+                left_clear = false;
+            }
+        }
+    }
+
+    if (car_ahead)
+    {
+        ref_vel -= 0.2;
+
+        if (left_clear)
+        {
+            lane--;
+            cout << "Change Lane : left" << endl;
+        }
+        else if (right_clear)
+        {
+            lane++;
+            cout << "Change Lane : right" << endl;
+        }
+
+    }
+    else if (ref_vel < MAX_SPEED - 0.5) {
+        ref_vel += 0.2;
+    }
+
+    d = 2 + 4 * lane;
+
+}
+
+
 int main() {
   uWS::Hub h;
 
@@ -205,7 +289,9 @@ int main() {
     map_waypoints_dy.push_back(d_y);
   }
 
-  h.onMessage([&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
+  double ref_velocity = 0.0;
+
+  h.onMessage([&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy, &ref_velocity](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
                      uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
     // The 4 signifies a websocket message
@@ -243,42 +329,66 @@ int main() {
             auto sensor_fusion = j[1]["sensor_fusion"];
 
             double ref_yaw = deg2rad(car_yaw);
+            double ref_x = car_x;
+            double ref_y = car_y;
 
             json msgJson;
 
             vector<double> next_x_vals;
             vector<double> next_y_vals;
 
-            // Add unprocessed points from previous path to current path
-            for(int i = 0; i < path_size; i++)
-            {
-                next_x_vals.push_back(previous_path_x[i]);
-                next_y_vals.push_back(previous_path_y[i]);
-            }
-
             // TODO: define a path made up of (x,y) points that the car will visit sequentially every .02 seconds
-
+            
             // 2. keep in lane
-            if (car_speed < MAX_SPEED) {
-                car_speed += 0.2;
-            }
+
             vector<double> next_x_pts;
             vector<double> next_y_pts;
-            //int current_lane = pp.detectLane(car_d);
 
             int prev_len = previous_path_x.size();
 
-            if (prev_len > 1) {
-                next_x_pts.push_back(previous_path_x[prev_len - 2]);
-                next_y_pts.push_back(previous_path_y[prev_len - 2]);
+            if(prev_len > 0) {     
+                car_s = end_path_s;
+
+                // Add unprocessed points from previous path to current path
+                for(size_t i = 0; i != prev_len; i++)
+                {
+                    next_x_vals.push_back(previous_path_x[i]);
+                    next_y_vals.push_back(previous_path_y[i]);
+                }
             }
 
-            if (prev_len > 0) {
-                next_x_pts.push_back(previous_path_x[prev_len - 1]);
-                next_y_pts.push_back(previous_path_y[prev_len - 1]);
+
+            if (prev_len > 1) {
+                ref_x = previous_path_x[prev_len - 1];
+                ref_y = previous_path_y[prev_len - 1];
+
+                double ref_x_prev = previous_path_x[prev_len - 2];
+                double ref_y_prev = previous_path_y[prev_len - 2];
+                next_x_pts.push_back(ref_x_prev);
+                next_y_pts.push_back(ref_y_prev);
+                next_x_pts.push_back(ref_x);
+                next_y_pts.push_back(ref_y);
+
+                ref_yaw = atan2(ref_y - ref_y_prev, 
+                    ref_x - ref_x_prev);
             }
+            else {
+                // if the previous path is almost empty, use the car as starting reference
+                double prev_car_x = car_x - cos(car_yaw);
+                double prev_car_y = car_y - sin(car_yaw);
+
+                next_x_pts.push_back(prev_car_x);
+                next_x_pts.push_back(car_x);
+
+                next_y_pts.push_back(prev_car_y);
+                next_y_pts.push_back(car_y);
+            }
+
+            chooseLane(car_d, car_s, ref_velocity, prev_len, sensor_fusion);
+
 
             for (size_t i = 0; i < 3; ++i) {
+                //cout << "car_s : " << car_s << ", end_path_s is: " << end_path_s << "\n";
                 vector<double> next_point = getXY(car_s + 30 * (i+1), car_d, map_waypoints_s, map_waypoints_x, map_waypoints_y);
                 next_x_pts.push_back(next_point[0]);
                 next_y_pts.push_back(next_point[1]);
@@ -289,23 +399,26 @@ int main() {
              * Convert points to frame of ref relative to car, x forward direction
              */
             for (int i = 0; i < next_x_pts.size(); i++) {
-                double shift_x = next_x_pts[i] - car_x;
-                double shift_y = next_y_pts[i] - car_y;
+                double shift_x = next_x_pts[i] - ref_x;
+                double shift_y = next_y_pts[i] - ref_y;
+                //cout << "next_x_pts : " << next_x_pts[i] << ", y is: " << next_y_pts[i] << "\n";
 
                 next_x_pts[i] = (shift_x*cos(0-ref_yaw)-shift_y*sin(0-ref_yaw));
                 next_y_pts[i] = (shift_x*sin(0-ref_yaw)+shift_y*cos(0-ref_yaw));
+
             }
 
+
             tk::spline s;
-            s.set_points(next_x_pts,next_y_pts);
+            s.set_points(next_x_pts, next_y_pts);
 
             double target_x = 30;
             double target_y = s(target_x);
             double target_distance = sqrt(target_x * target_x + target_y * target_y);
-            double N = target_distance / (0.02 * car_speed);
+            double N = target_distance / (0.02 * ref_velocity / 2.24);
             double x_last = 0;
 
-            for (size_t i = 0; i < path_size - next_x_pts.size(); ++i) {
+            for (size_t i = 0; i < PATH_SIZE - prev_len; ++i) {
                 double next_x = x_last + target_x / N;
                 double next_y = s(next_x);
                 x_last = next_x;
@@ -316,8 +429,8 @@ int main() {
                 next_x = (x_ref * cos(ref_yaw)-y_ref*sin(ref_yaw));
                 next_y = (x_ref * sin(ref_yaw)+y_ref*cos(ref_yaw));
 
-                next_x += car_x;
-                next_y += car_y;
+                next_x += ref_x;
+                next_y += ref_y;
                 next_x_vals.push_back(next_x);
                 next_y_vals.push_back(next_y);
 
