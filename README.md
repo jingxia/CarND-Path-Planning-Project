@@ -1,5 +1,24 @@
 # CarND-Path-Planning-Project
 Self-Driving Car Engineer Nanodegree Program
+
+## Code model for generating paths. 
+
+Every the controller gets information from the simulator, it will read in this car's current status, status of all other cars (location, velocity, etc), and the remaining of previous path. It'll do the following things, and finally send out a new path, which consists of 50 points describing the new path of next 1s (0.02s interval between points): 
+1. Add all remaining trajectory points from previous path to the new path's beginning (if any);
+2. We will use a set of 5 points as anchor points to generate the new path. 
+
+   a. Set the last point from previous path as ref location of the new projection. If there's no remaining points from previous path, set the car's current location as ref location; 
+   
+   b. Add the last 2 points from previous path as first 2 points of the anchor points;
+   
+   c. From the ref location, take the next 3 points, each 30m, 60m and 90m away from the ref location, on the lane of chosen (which also adjust the velocity; this step will explain in detail later in **chooseLane step**), along the road given by the map. 
+   
+   d. fit a spline based off the 5 anchor points; 
+   
+   e. based on the desired velocity and yaw, find the points on the spline each with interval of 0.02s, and fill into the new path list until it has 50 points. Then send the new path to the simulator. 
+   
+### chooseLane step
+
    
 ### Simulator.
 You can download the Term3 Simulator which contains the Path Planning Project from the [releases tab (https://github.com/udacity/self-driving-car-sim/releases/tag/T3_v1.2).
